@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY index.html books.js server.py sw.js manifest.webmanifest ./
-COPY embeddings.bin embeddings.json icon-192.png icon-512.png ./
+COPY embeddings.bin embeddings.json icon-192.png icon-512.png isbn_extra.json ./
 COPY vendor vendor
 COPY model model
 COPY thumbs thumbs

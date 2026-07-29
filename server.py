@@ -134,29 +134,57 @@ def bling(method, path, body=None, params=None):
 
 # ---------------- catálogo: mapa ISBN -> produto Bling ----------------
 
+def _norm_titulo(s):
+    import unicodedata
+    s = unicodedata.normalize("NFD", (s or "").lower()).encode("ascii", "ignore").decode()
+    s = re.sub(r"[^a-z0-9 ]", " ", s)
+    s = re.sub(r"^(a|o|as|os|um|uma) ", "", s.strip())
+    return re.sub(r"\s+", " ", s)
+
+
 def build_product_map():
-    """Pagina /produtos e guarda id+preço de cada GTIN. Roda em background."""
+    """Casa os ISBNs do catálogo com os produtos do Bling por SKU e por nome.
+    (A listagem do Bling não expõe GTIN, mas expõe codigo/nome.)"""
     try:
-        mapa = {}
-        page = 1
-        vistos = 0
+        extra = _load(ROOT / "isbn_extra.json", {})
+        # 1) baixa o catálogo inteiro do Bling (codigo, nome, preco)
+        produtos, page = [], 1
         while True:
             res = bling("GET", "/produtos", params={
                 "pagina": page, "limite": 100, "criterio": 2, "tipo": "P"})
             rows = res.get("data", [])
             if not rows:
                 break
-            vistos += len(rows)
-            for p in rows:
-                gtin = re.sub(r"\D", "", str(p.get("gtin") or ""))
-                if len(gtin) == 13:
-                    mapa[gtin] = {"id": p["id"], "nome": p.get("nome", ""),
-                                  "preco": p.get("preco", 0)}
+            produtos.extend(rows)
             page += 1
-            time.sleep(0.4)  # respeita 3 req/s
+            time.sleep(0.35)
+        por_sku = {str(p.get("codigo") or "").strip(): p
+                   for p in produtos if str(p.get("codigo") or "").strip()}
+        por_nome = {_norm_titulo(p.get("nome")): p for p in produtos}
+
+        # 2) casa cada ISBN: SKU exato -> nome exato -> nome contém
+        mapa, sku_hits, nome_hits, sem = {}, 0, 0, []
+        for isbn, info in extra.items():
+            p = por_sku.get(str(info.get("sku") or "").strip())
+            if p:
+                sku_hits += 1
+            else:
+                nt = _norm_titulo(info.get("t"))
+                p = por_nome.get(nt)
+                if not p and len(nt) >= 15:
+                    p = next((v for k, v in por_nome.items()
+                              if len(k) >= 15 and (k.startswith(nt[:25]) or nt.startswith(k[:25]))), None)
+                if p:
+                    nome_hits += 1
+            if p:
+                mapa[isbn] = {"id": p["id"], "nome": p.get("nome", ""),
+                              "preco": p.get("preco", 0)}
+            else:
+                sem.append(info.get("t", isbn)[:40])
         _save(MAP_FILE, mapa)
         _save(DATA / "map_status.json",
-              {"ok": True, "produtosVistos": vistos, "comGtin13": len(mapa),
+              {"ok": True, "produtosBling": len(produtos), "casadosPorSku": sku_hits,
+               "casadosPorNome": nome_hits, "semMatch": sem[:40],
                "quando": datetime.now().isoformat()})
         return mapa
     except Exception as e:
@@ -386,7 +414,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 _token_request({"grant_type": "authorization_code", "code": qs["code"][0]})
             except Exception as e:
                 return self._json({"erro": f"troca de token falhou: {e}"}, 500)
-            if not product_map():
+            if len(product_map()) < 50:
                 threading.Thread(target=build_product_map, daemon=True).start()
             return self._redirect("/?sessao=" + make_session())
 
