@@ -1,34 +1,42 @@
 #!/usr/bin/env python3
-"""Servidor simples para a app de leitura de código de barras"""
+"""Servidor do Parábola Scanner — serve o app e bloqueia listagem de diretório."""
 
 import http.server
-import socketserver
 import os
-import sys
+import socketserver
 from pathlib import Path
 
-PORT = 8000
-Handler = http.server.SimpleHTTPRequestHandler
+PORT = int(os.environ.get("PORT", 8000))
+ROOT = Path(__file__).parent
 
-def start_server():
-    script_dir = Path(__file__).parent
-    os.chdir(script_dir)
+ALLOWED = {"/index.html", "/books.js", "/books.json", "/favicon.ico"}
 
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print(f"🚀 Servidor iniciado!")
-        print(f"📱 Acesse via navegador do celular:")
-        print(f"   http://<seu-ip>:{PORT}/book-scanner.html")
-        print(f"\n💡 Para encontrar seu IP, execute em outro terminal:")
-        print(f"   ifconfig | grep inet")
-        print(f"\n   Ou em Mac:")
-        print(f"   ipconfig getifaddr en0")
-        print(f"\n🛑 Pressione Ctrl+C para parar o servidor")
 
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\n✅ Servidor finalizado")
-            sys.exit(0)
+class AppHandler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(ROOT), **kwargs)
+
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        if path == "/" or path == "/book-scanner.html":
+            self.path = "/index.html"
+        elif path not in ALLOWED:
+            self.send_error(404)
+            return
+        super().do_GET()
+
+    def end_headers(self):
+        # sempre servir versão fresca do app após deploy
+        self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
+    def list_directory(self, path):
+        self.send_error(404)
+        return None
+
 
 if __name__ == "__main__":
-    start_server()
+    socketserver.TCPServer.allow_reuse_address = True
+    with socketserver.TCPServer(("", PORT), AppHandler) as httpd:
+        print(f"Parábola Scanner rodando na porta {PORT}")
+        httpd.serve_forever()

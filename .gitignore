@@ -29,3 +29,8 @@ build/
 # Logs
 *.log
 npm-debug.log*
+
+# dados internos / estado local
+.omc/
+materialenviadoaogel.xls
+books.json
