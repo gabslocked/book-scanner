@@ -365,15 +365,31 @@ def criar_contato(cust):
 def _resolver_produto(isbn):
     mapa = product_map()
     prod = mapa.get(isbn)
-    if not prod:
-        res = bling("GET", "/produtos", params={"gtins[]": isbn, "limite": 5})
-        rows = res.get("data", [])
-        if not rows:
-            raise RuntimeError(f"ISBN {isbn} não encontrado no Bling")
-        p = rows[0]
-        prod = {"id": p["id"], "nome": p.get("nome", ""), "preco": p.get("preco", 0)}
-        mapa[isbn] = prod
-        _save(MAP_FILE, mapa)
+    if prod:
+        return prod
+    res = bling("GET", "/produtos", params={"gtins[]": isbn, "limite": 5})
+    rows = res.get("data", [])
+    if not rows:
+        # autocura: busca por nome usando o título do catálogo do site
+        info = _load(ROOT / "isbn_extra.json", {}).get(isbn) or {}
+        titulo = info.get("t") or ""
+        if titulo:
+            res = bling("GET", "/produtos", params={
+                "nome": titulo[:40], "limite": 10, "tipo": "P", "criterio": 2})
+            alvo = _norm_titulo(titulo)
+            for p in res.get("data", []):
+                nt = _norm_titulo(p.get("nome"))
+                if nt == alvo or (len(nt) >= 15 and len(alvo) >= 15 and
+                                  (nt.startswith(alvo[:25]) or alvo.startswith(nt[:25]))):
+                    rows = [p]
+                    break
+    if not rows:
+        raise RuntimeError(f"ISBN {isbn} não encontrado no Bling — confira se o "
+                           f"livro está cadastrado lá (título do site: {titulo or '?'})")
+    p = rows[0]
+    prod = {"id": p["id"], "nome": p.get("nome", ""), "preco": p.get("preco", 0)}
+    mapa[isbn] = prod
+    _save(MAP_FILE, mapa)
     return prod
 
 

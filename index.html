@@ -216,6 +216,11 @@
   .hst.pendente { background:rgba(255,176,32,.2); color:#ffb020; }
   .hst.enviada { background:rgba(34,224,108,.18); color:#22e06c; }
   .hst.erro { background:rgba(224,85,85,.2); color:#e05555; }
+  .hretry {
+    margin-top:4px; padding:5px 10px; border-radius:8px; cursor:pointer;
+    font-size:11px; font-weight:800; color:#ffb020;
+    background:rgba(255,176,32,.15); border:1px solid rgba(255,176,32,.5);
+  }
 
   #toast {
     position:absolute; top:calc(env(safe-area-inset-top, 0px) + 64px); left:50%; transform:translateX(-50%);
@@ -792,6 +797,18 @@ async function syncQueue() {
 window.addEventListener('online', syncQueue);
 setInterval(syncQueue, 15000);
 
+document.getElementById('salesList').addEventListener('click', e => {
+  const b = e.target.closest('button[data-vid]');
+  if (!b) return;
+  const q = loadQueue();
+  const v = q.find(x => x.id === b.dataset.vid);
+  if (!v) return;
+  v.status = 'pendente'; v.msg = '';
+  saveQueue(q);
+  renderSales();
+  syncQueue();
+});
+
 function renderSales() {
   const q = loadQueue().slice().reverse();
   const pend = q.filter(v => v.status === 'pendente').length;
@@ -809,6 +826,7 @@ function renderSales() {
       <div class="hmid">
         <div class="ht">${titulo}</div>
         <span class="hst ${v.status}">${v.status === 'pendente' ? 'aguardando sinal' : v.status === 'enviada' ? 'no Bling · ' + esc(String(v.msg)) : 'erro: ' + esc(String(v.msg))}${v.pagamento ? ' · ' + v.pagamento : ''}</span>
+        ${v.status === 'erro' ? `<div><button class="hretry" data-vid="${v.id}">tentar de novo</button></div>` : ''}
       </div>
       <div class="hp">${brl0(total)}</div>
     </div>`;
