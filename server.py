@@ -200,8 +200,20 @@ def product_map():
 # ---------------- venda ----------------
 
 def _consumidor_final():
-    res = bling("GET", "/contatos/consumidor-final")
-    return res["data"]
+    try:
+        res = bling("GET", "/contatos/consumidor-final")
+        return res["data"]
+    except RuntimeError as e:
+        if "insufficient_scope" not in str(e):
+            raise
+        # sem escopo de Contatos: acha o Consumidor Final nos pedidos recentes
+        # (as vendas manuais da frente de caixa usam ele)
+        res = bling("GET", "/pedidos/vendas", params={"pagina": 1, "limite": 100})
+        for p in res.get("data", []):
+            c = p.get("contato") or {}
+            if c.get("id") and "consumidor" in (c.get("nome") or "").lower():
+                return {"id": c["id"], "nome": c["nome"]}
+        raise
 
 
 def _formas_pagamento():
