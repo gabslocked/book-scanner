@@ -120,6 +120,58 @@
   .gate .cachebar > div { height:100%; width:0%; background:#ffb020; transition:width .3s; }
   .gate.hidden { display:none; }
 
+  /* ---- venda ---- */
+  .sellbar {
+    position:absolute; left:50%; transform:translateX(-50%);
+    bottom:calc(env(safe-area-inset-bottom, 0px) + 72px); z-index:25;
+    display:none; align-items:center; gap:10px;
+    padding:12px 20px; border:none; border-radius:16px; cursor:pointer;
+    background:#ffb020; color:#111; font-size:16px; font-weight:800;
+    box-shadow:0 8px 30px rgba(255,176,32,.45);
+  }
+  .sellbar.show { display:flex; animation:pop .25s cubic-bezier(.2,1.4,.4,1); }
+  .sellbar small { font-weight:600; opacity:.75; max-width:140px; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; }
+  .qbadge {
+    display:none; font-size:10px; font-weight:800; padding:3px 8px; border-radius:8px;
+    background:rgba(255,176,32,.25); color:#ffb020; letter-spacing:.3px;
+  }
+  .qbadge.show { display:block; }
+  .modal {
+    position:fixed; inset:0; z-index:60; display:none; align-items:flex-end; justify-content:center;
+    background:rgba(0,0,0,.55);
+  }
+  .modal.open { display:flex; }
+  .modal-card {
+    width:100%; max-width:440px; background:#12141d;
+    border:1px solid rgba(255,255,255,.12); border-bottom:none;
+    border-radius:20px 20px 0 0; padding:20px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  }
+  .modal-book { display:flex; gap:12px; align-items:center; margin-bottom:16px; }
+  .modal-book img { width:46px; height:58px; object-fit:cover; border-radius:8px; background:#222; }
+  .modal-book .mt { font-size:14px; font-weight:700; line-height:1.3; }
+  .modal-book .mp { font-size:18px; font-weight:800; color:#ffb020; margin-top:3px; }
+  .modal-book .mp s { font-size:12px; color:rgba(255,255,255,.4); font-weight:500; margin-left:6px; }
+  .modal label { display:block; font-size:11px; font-weight:700; color:rgba(255,255,255,.5);
+    margin:10px 2px 4px; letter-spacing:.3px; }
+  .modal input {
+    width:100%; padding:12px 14px; border-radius:12px; font-size:15px; color:#fff;
+    background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.14); outline:none;
+  }
+  .modal input:focus { border-color:#ffb020; }
+  .modal .hint { font-size:11px; color:rgba(255,255,255,.4); margin:8px 2px 0; }
+  .modal .mbtns { display:flex; gap:10px; margin-top:18px; }
+  .modal .mbtns button {
+    flex:1; padding:14px; border:none; border-radius:14px; font-size:15px; font-weight:800; cursor:pointer;
+  }
+  .modal .cancel { background:rgba(255,255,255,.08); color:rgba(255,255,255,.75);
+    border:1px solid rgba(255,255,255,.15); }
+  .modal .confirm { background:#ffb020; color:#111; }
+  .hitem .hst { font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:6px; margin-top:3px; display:inline-block; }
+  .hst.pendente { background:rgba(255,176,32,.2); color:#ffb020; }
+  .hst.enviada { background:rgba(34,224,108,.18); color:#22e06c; }
+  .hst.erro { background:rgba(224,85,85,.2); color:#e05555; }
+
   #toast {
     position:absolute; top:calc(env(safe-area-inset-top, 0px) + 64px); left:50%; transform:translateX(-50%);
     z-index:30; background:rgba(200,40,40,.92); padding:10px 18px; border-radius:12px;
@@ -143,7 +195,7 @@
   <canvas id="overlay"></canvas>
 
   <div class="topbar">
-    <div class="brand"><div class="dot" id="liveDot"></div> Parábola <span class="modechip" id="modeChip">CÓDIGO</span></div>
+    <div class="brand"><div class="dot" id="liveDot"></div> Parábola <span class="modechip" id="modeChip">CÓDIGO</span> <span class="qbadge" id="qbadge"></span></div>
     <div class="topbtns">
       <button class="iconbtn" id="torchBtn" style="display:none" aria-label="Lanterna">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>
@@ -154,6 +206,33 @@
   <div id="toast"></div>
   <div id="cards"></div>
 
+  <button class="sellbar" id="sellbar">
+    Vender <small id="sellTitle"></small> <span id="sellPrice"></span>
+  </button>
+
+  <div class="modal" id="sellModal">
+    <div class="modal-card">
+      <div class="modal-book">
+        <img id="mImg" src="" alt="">
+        <div>
+          <div class="mt" id="mTitle"></div>
+          <div class="mp"><span id="mPrice"></span><s id="mOld"></s></div>
+        </div>
+      </div>
+      <label>WhatsApp (opcional)</label>
+      <input id="mWhats" type="tel" inputmode="tel" placeholder="(11) 98765-4321" autocomplete="off">
+      <label>Nome (opcional)</label>
+      <input id="mNome" type="text" placeholder="Nome do cliente" autocomplete="off">
+      <label>CPF (opcional)</label>
+      <input id="mCpf" type="tel" inputmode="numeric" placeholder="000.000.000-00" autocomplete="off">
+      <div class="hint">Tudo opcional — deixe em branco pra venda sem cadastro. A venda entra na fila e sobe pro Bling quando tiver sinal.</div>
+      <div class="mbtns">
+        <button class="cancel" id="mCancel">Cancelar</button>
+        <button class="confirm" id="mConfirm">Finalizar venda</button>
+      </div>
+    </div>
+  </div>
+
   <div class="sheet" id="sheet">
     <div class="sheet-head" id="sheetHead">
       <div class="grab"></div>
@@ -161,6 +240,7 @@
       <div class="sheet-total" id="sheetTotal"></div>
     </div>
     <div class="sheet-body">
+      <div id="salesList"></div>
       <div id="historyList"></div>
       <button class="hclear" id="clearBtn">Limpar lista</button>
     </div>
@@ -276,6 +356,7 @@ function registerDetection(code, rawBox) {
     const info = lookupBook(code);
     tr = { box: {...box}, target: box, lastSeen: now, el: makeCard(code, info), info };
     tracks.set(code, tr);
+    setCurrentBook(code, info);
     if (!seenSession.has(code)) {
       seenSession.add(code);
       beep();
@@ -483,6 +564,7 @@ function showVisionCard(m) {
   visionCard.style.left = '50%';
   visionCard.style.top = 'calc(env(safe-area-inset-top, 0px) + 70px)';
   visionCode = m.isbn;
+  setCurrentBook(m.isbn, info);
   if (!seenSession.has(m.isbn)) {
     seenSession.add(m.isbn);
     beep();
@@ -559,6 +641,113 @@ function toast(msg, ms = 3500) {
   t.textContent = msg; t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), ms);
 }
+
+// ================= venda: livro atual + fila offline =================
+let currentBook = null; // {isbn, title, price}
+const sellbar = document.getElementById('sellbar');
+
+function setCurrentBook(isbn, info) {
+  if (!info.known) return;
+  const price = info.price20 != null ? info.price20 : Math.round(info.priceSite * 0.80 * 100) / 100;
+  currentBook = { isbn, title: info.title, price };
+  document.getElementById('sellTitle').textContent = info.title;
+  document.getElementById('sellPrice').textContent = brl0(price);
+  sellbar.classList.add('show');
+}
+setInterval(() => { // some quando nada detectado há 4s
+  const idle = performance.now() - lastBarcodeAt > 4000;
+  if (idle && !visionCard && currentBook) { currentBook = null; sellbar.classList.remove('show'); }
+}, 1000);
+
+// fila em localStorage: sobrevive a fechar o navegador
+function loadQueue() { try { return JSON.parse(localStorage.getItem('fila_vendas') || '[]'); } catch(e) { return []; } }
+function saveQueue(q) { try { localStorage.setItem('fila_vendas', JSON.stringify(q.slice(-200))); } catch(e) {} }
+
+function enqueueSale(cliente) {
+  const b = currentBook;
+  if (!b) return;
+  const q = loadQueue();
+  q.push({
+    id: (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)),
+    isbn: b.isbn, titulo: b.title, preco: b.price, quantidade: 1,
+    cliente, ts: Date.now(), status: 'pendente', msg: ''
+  });
+  saveQueue(q);
+  beep();
+  renderSales();
+  syncQueue();
+}
+
+let syncing = false;
+async function syncQueue() {
+  if (syncing || !navigator.onLine) return;
+  syncing = true;
+  try {
+    const q = loadQueue();
+    for (const v of q) {
+      if (v.status !== 'pendente') continue;
+      try {
+        const r = await fetch('/api/vender', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(v),
+          signal: AbortSignal.timeout ? AbortSignal.timeout(25000) : undefined,
+        });
+        const j = await r.json();
+        if (j.ok) { v.status = 'enviada'; v.msg = 'pedido ' + (j.numero || j.pedidoId); }
+        else if (j.retry === false) { v.status = 'erro'; v.msg = j.erro || 'rejeitada'; }
+        // retry === true: continua pendente pra próxima rodada
+        saveQueue(q);
+        renderSales();
+      } catch(e) { break; } // sem rede/servidor: para e tenta depois
+    }
+  } finally { syncing = false; }
+}
+window.addEventListener('online', syncQueue);
+setInterval(syncQueue, 15000);
+
+function renderSales() {
+  const q = loadQueue().slice().reverse();
+  const pend = q.filter(v => v.status === 'pendente').length;
+  const badge = document.getElementById('qbadge');
+  badge.textContent = pend ? pend + ' na fila' : '';
+  badge.classList.toggle('show', pend > 0);
+  document.getElementById('salesList').innerHTML = q.slice(0, 30).map(v => `
+    <div class="hitem">
+      <img src="thumbs/${v.isbn}.jpg" alt="" loading="lazy">
+      <div class="hmid">
+        <div class="ht">${esc(v.titulo)}</div>
+        <span class="hst ${v.status}">${v.status === 'pendente' ? 'aguardando sinal' : v.status === 'enviada' ? 'no Bling · ' + esc(String(v.msg)) : 'erro: ' + esc(String(v.msg))}</span>
+      </div>
+      <div class="hp">${brl0(v.preco)}</div>
+    </div>`).join('');
+}
+
+// ---- modal ----
+const sellModal = document.getElementById('sellModal');
+sellbar.onclick = () => {
+  if (!currentBook) return;
+  document.getElementById('mImg').src = 'thumbs/' + currentBook.isbn + '.jpg';
+  document.getElementById('mTitle').textContent = currentBook.title;
+  document.getElementById('mPrice').textContent = brl0(currentBook.price);
+  const info = lookupBook(currentBook.isbn);
+  document.getElementById('mOld').textContent = info.cover ? brl0(info.cover) : '';
+  sellModal.classList.add('open');
+};
+document.getElementById('mCancel').onclick = () => sellModal.classList.remove('open');
+sellModal.addEventListener('click', e => { if (e.target === sellModal) sellModal.classList.remove('open'); });
+document.getElementById('mConfirm').onclick = () => {
+  const whats = document.getElementById('mWhats').value.trim();
+  const nome = document.getElementById('mNome').value.trim();
+  const cpf = document.getElementById('mCpf').value.trim();
+  const cliente = (whats || nome || cpf) ? { whatsapp: whats, nome, cpf } : null;
+  sellModal.classList.remove('open');
+  ['mWhats','mNome','mCpf'].forEach(i => document.getElementById(i).value = '');
+  enqueueSale(cliente);
+  toast('Venda registrada' + (navigator.onLine ? '' : ' — sobe pro Bling quando tiver sinal'), 2500);
+};
+renderSales();
+syncQueue();
 
 document.getElementById('startBtn').onclick = async () => {
   const btn = document.getElementById('startBtn');
