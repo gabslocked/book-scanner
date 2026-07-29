@@ -9,10 +9,22 @@ from pathlib import Path
 PORT = int(os.environ.get("PORT", 8000))
 ROOT = Path(__file__).parent
 
-ALLOWED = {"/index.html", "/books.js", "/books.json", "/favicon.ico"}
+ALLOWED = {"/index.html", "/books.js", "/embeddings.bin", "/embeddings.json",
+           "/sw.js", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png",
+           "/favicon.ico"}
+ALLOWED_PREFIX = ("/thumbs/", "/model/", "/vendor/")
+
+# imutáveis (nome versionado pelo sw): cache longo; app: sempre revalidar
+LONG_CACHE = ALLOWED_PREFIX
 
 
 class AppHandler(http.server.SimpleHTTPRequestHandler):
+    extensions_map = {
+        **http.server.SimpleHTTPRequestHandler.extensions_map,
+        ".webmanifest": "application/manifest+json",
+        ".bin": "application/octet-stream",
+    }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
@@ -20,14 +32,16 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/" or path == "/book-scanner.html":
             self.path = "/index.html"
-        elif path not in ALLOWED:
+        elif path not in ALLOWED and not path.startswith(ALLOWED_PREFIX):
             self.send_error(404)
             return
         super().do_GET()
 
     def end_headers(self):
-        # sempre servir versão fresca do app após deploy
-        self.send_header("Cache-Control", "no-cache")
+        if self.path.startswith(LONG_CACHE):
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 
     def list_directory(self, path):
