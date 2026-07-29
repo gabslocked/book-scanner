@@ -33,9 +33,84 @@ DONE_FILE = DATA / "vendas_processadas.json"
 _lock = threading.Lock()
 
 
-# ---------------- token store ----------------
+# ---------------- storage: Redis (preferido) + arquivo no volume ----------------
+
+class MiniRedis:
+    """Cliente RESP mínimo (AUTH/SELECT/GET/SET/PING), sem dependências."""
+
+    def __init__(self, url):
+        u = urllib.parse.urlparse(url)
+        self.host = u.hostname or "localhost"
+        self.port = u.port or 6379
+        self.password = u.password
+        self.db = int((u.path or "/0").lstrip("/") or 0)
+
+    def _cmd(self, *args):
+        import socket
+        def enc(cmd):
+            out = f"*{len(cmd)}\r\n".encode()
+            for a in cmd:
+                b = a if isinstance(a, bytes) else str(a).encode()
+                out += f"${len(b)}\r\n".encode() + b + b"\r\n"
+            return out
+        with socket.create_connection((self.host, self.port), timeout=5) as s:
+            pre = []
+            if self.password:
+                pre.append(("AUTH", self.password))
+            if self.db:
+                pre.append(("SELECT", self.db))
+            s.sendall(b"".join(enc(c) for c in pre) + enc(args))
+            f = s.makefile("rb")
+            for _ in pre:
+                self._read(f)
+            return self._read(f)
+
+    def _read(self, f):
+        line = f.readline()
+        t, rest = line[:1], line[1:].strip()
+        if t == b"+":
+            return rest.decode()
+        if t == b"-":
+            raise RuntimeError("redis: " + rest.decode())
+        if t == b":":
+            return int(rest)
+        if t == b"$":
+            n = int(rest)
+            if n == -1:
+                return None
+            return f.read(n + 2)[:-2]
+        if t == b"*":
+            return [self._read(f) for _ in range(int(rest))]
+        raise RuntimeError("resposta RESP inesperada")
+
+    def get(self, k):
+        return self._cmd("GET", k)
+
+    def set(self, k, v):
+        return self._cmd("SET", k, v)
+
+    def ping(self):
+        return self._cmd("PING") == "PONG"
+
+
+_redis = MiniRedis(os.environ["REDIS_URL"]) if os.environ.get("REDIS_URL") else None
+
+
+def redis_ok():
+    try:
+        return bool(_redis and _redis.ping())
+    except Exception:
+        return False
+
 
 def _load(f, default):
+    if _redis:
+        try:
+            v = _redis.get("parabola:" + f.name)
+            if v is not None:
+                return json.loads(v)
+        except Exception:
+            pass
     try:
         return json.loads(f.read_text())
     except Exception:
@@ -43,7 +118,16 @@ def _load(f, default):
 
 
 def _save(f, obj):
-    f.write_text(json.dumps(obj, ensure_ascii=False))
+    s = json.dumps(obj, ensure_ascii=False)
+    try:
+        f.write_text(s)
+    except Exception:
+        pass
+    if _redis:
+        try:
+            _redis.set("parabola:" + f.name, s)
+        except Exception:
+            pass
 
 
 def bling_configured():
@@ -82,7 +166,7 @@ def _states():
 
 
 def bling_connected():
-    return TOKENS_FILE.exists()
+    return _load(TOKENS_FILE, None) is not None
 
 
 def _token_request(payload):
@@ -397,9 +481,10 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/bling/status":
             return self._json({
-                "versao": 11,
+                "versao": 12,
                 "configurado": bling_configured(),
                 "conectado": bling_connected(),
+                "redis": redis_ok(),
                 "produtosMapeados": len(product_map()),
             })
 
