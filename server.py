@@ -397,6 +397,7 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/bling/status":
             return self._json({
+                "versao": 11,
                 "configurado": bling_configured(),
                 "conectado": bling_connected(),
                 "produtosMapeados": len(product_map()),
@@ -450,6 +451,14 @@ class AppHandler(SimpleHTTPRequestHandler):
                     for f in cached("formas_pagamento", _formas_pagamento)]
             except Exception as e:
                 out["erroFormas"] = str(e)[:200]
+            try:
+                res = bling("GET", "/pedidos/vendas", params={"pagina": 1, "limite": 3})
+                rows = res.get("data", [])
+                out["pedidosAmostra"] = [{"id": p.get("id"), "numero": p.get("numero"),
+                                          "contato": p.get("contato")} for p in rows]
+                out["chaves1oPedido"] = sorted(rows[0].keys()) if rows else []
+            except Exception as e:
+                out["erroPedidos"] = str(e)[:300]
             return self._json(out)
 
         if path == "/api/bling/testar-venda":
