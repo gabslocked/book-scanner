@@ -303,6 +303,44 @@ class AppHandler(SimpleHTTPRequestHandler):
             threading.Thread(target=build_product_map, daemon=True).start()
             return self._redirect("/?bling=conectado")
 
+        if path == "/api/bling/testar-venda":
+            # guarda simples: exige os 10 primeiros chars do client_secret
+            if qs.get("chave", [""])[0] != BLING_CLIENT_SECRET[:10]:
+                return self._json({"erro": "chave inválida"}, 403)
+            if not bling_connected():
+                return self._json({"erro": "não conectado"}, 400)
+            rel = {"passos": []}
+            try:
+                mapa = product_map()
+                if not mapa:
+                    return self._json({"erro": "mapa de produtos vazio — rode /api/bling/mapear"}, 400)
+                isbn = min(mapa, key=lambda k: mapa[k].get("preco") or 9e9)
+                venda = {"id": f"TESTE-{int(time.time())}", "isbn": isbn,
+                         "titulo": mapa[isbn]["nome"], "quantidade": 1}
+                r = processar_venda(venda)
+                rel["passos"].append({"criar": r})
+                pid = r["pedidoId"]
+                ped = bling("GET", f"/pedidos/vendas/{pid}")["data"]
+                rel["passos"].append({"conferir": {
+                    "numero": ped.get("numero"), "total": ped.get("total"),
+                    "item": ped.get("itens", [{}])[0].get("descricao", "")}})
+                for acao in ("estornar-estoque", "estornar-contas"):
+                    try:
+                        bling("POST", f"/pedidos/vendas/{pid}/{acao}")
+                        rel["passos"].append({acao: "ok"})
+                    except Exception as e:
+                        rel["passos"].append({acao: f"ignorado: {str(e)[:120]}"})
+                bling("DELETE", f"/pedidos/vendas/{pid}")
+                rel["passos"].append({"excluir": "ok"})
+                done = _load(DONE_FILE, {})
+                done.pop(venda["id"], None)
+                _save(DONE_FILE, done)
+                rel["resultado"] = "SUCESSO: venda criada e cancelada, conta limpa"
+                return self._json(rel)
+            except Exception as e:
+                rel["erro"] = str(e)[:400]
+                return self._json(rel, 502)
+
         if path == "/api/bling/mapear":
             if not bling_connected():
                 return self._json({"erro": "não conectado"}, 400)
