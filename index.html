@@ -120,18 +120,56 @@
   .gate .cachebar > div { height:100%; width:0%; background:#ffb020; transition:width .3s; }
   .gate.hidden { display:none; }
 
-  /* ---- venda ---- */
+  /* ---- venda / carrinho ---- */
   .sellbar {
     position:absolute; left:50%; transform:translateX(-50%);
     bottom:calc(env(safe-area-inset-bottom, 0px) + 72px); z-index:25;
-    display:none; align-items:center; gap:10px;
-    padding:12px 20px; border:none; border-radius:16px; cursor:pointer;
-    background:#ffb020; color:#111; font-size:16px; font-weight:800;
-    box-shadow:0 8px 30px rgba(255,176,32,.45);
+    display:none; gap:10px; width:min(92vw, 420px);
   }
   .sellbar.show { display:flex; animation:pop .25s cubic-bezier(.2,1.4,.4,1); }
-  .sellbar small { font-weight:600; opacity:.75; max-width:140px; overflow:hidden;
-    text-overflow:ellipsis; white-space:nowrap; }
+  .sellbar button {
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
+    padding:11px 8px; border:none; border-radius:16px; cursor:pointer;
+    font-size:15px; font-weight:800;
+  }
+  .sellbar button small { font-weight:600; font-size:11px; opacity:.75; max-width:150px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sellbar .add {
+    background:rgba(13,15,22,.85); color:#ffb020; border:1.5px solid #ffb020;
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  }
+  .sellbar .now { background:#ffb020; color:#111; box-shadow:0 8px 30px rgba(255,176,32,.45); }
+  .cartpill {
+    position:absolute; left:14px;
+    bottom:calc(env(safe-area-inset-bottom, 0px) + 72px); z-index:24;
+    display:none; align-items:center; gap:8px;
+    padding:10px 14px; border:1.5px solid rgba(255,255,255,.2); border-radius:14px; cursor:pointer;
+    background:rgba(13,15,22,.88); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    color:#fff; font-size:13px; font-weight:700;
+  }
+  .cartpill.show { display:flex; animation:pop .25s cubic-bezier(.2,1.4,.4,1); }
+  .cartpill .n {
+    background:#ffb020; color:#111; font-size:11px; font-weight:800;
+    min-width:20px; height:20px; border-radius:10px; display:flex; align-items:center; justify-content:center;
+    padding:0 5px;
+  }
+  .cartpill .tot { color:#ffb020; }
+  .mitem { display:flex; align-items:center; gap:10px; padding:8px 0;
+    border-bottom:1px solid rgba(255,255,255,.08); }
+  .mitem img { width:38px; height:48px; object-fit:cover; border-radius:6px; background:#222; flex:none; }
+  .mitem .mi-t { flex:1; min-width:0; font-size:12.5px; font-weight:600; line-height:1.25;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .mitem .mi-p { font-size:13px; font-weight:800; color:#ffb020; white-space:nowrap; }
+  .stepper { display:flex; align-items:center; gap:2px; }
+  .stepper button {
+    width:28px; height:28px; border-radius:8px; border:1px solid rgba(255,255,255,.2);
+    background:rgba(255,255,255,.07); color:#fff; font-size:15px; font-weight:800; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  .stepper span { min-width:22px; text-align:center; font-size:13px; font-weight:800; }
+  .mtotal { display:flex; justify-content:space-between; align-items:baseline;
+    padding:12px 2px 2px; font-size:13px; font-weight:700; color:rgba(255,255,255,.6); }
+  .mtotal b { font-size:20px; color:#ffb020; letter-spacing:-.3px; }
   .qbadge {
     display:none; font-size:10px; font-weight:800; padding:3px 8px; border-radius:8px;
     background:rgba(255,176,32,.25); color:#ffb020; letter-spacing:.3px;
@@ -213,19 +251,19 @@
   <div id="toast"></div>
   <div id="cards"></div>
 
-  <button class="sellbar" id="sellbar">
-    Vender <small id="sellTitle"></small> <span id="sellPrice"></span>
+  <div class="sellbar" id="sellbar">
+    <button class="add" id="addBtn">+ Adicionar <small id="addTitle"></small></button>
+    <button class="now" id="sellNow">Vender <small id="sellPrice"></small></button>
+  </div>
+
+  <button class="cartpill" id="cartPill">
+    <span class="n" id="cartN">0</span> carrinho <span class="tot" id="cartTot"></span>
   </button>
 
   <div class="modal" id="sellModal">
     <div class="modal-card">
-      <div class="modal-book">
-        <img id="mImg" src="" alt="">
-        <div>
-          <div class="mt" id="mTitle"></div>
-          <div class="mp"><span id="mPrice"></span><s id="mOld"></s></div>
-        </div>
-      </div>
+      <div id="mItems" style="max-height:32vh;overflow-y:auto"></div>
+      <div class="mtotal"><span id="mCount"></span><b id="mTotal"></b></div>
       <label>Pagamento</label>
       <div class="payrow" id="payrow">
         <button data-pag="pix" class="sel">Pix</button>
@@ -655,16 +693,19 @@ function toast(msg, ms = 3500) {
   setTimeout(() => t.classList.remove('show'), ms);
 }
 
-// ================= venda: livro atual + fila offline =================
+// ================= venda: livro atual + carrinho + fila offline =================
 let currentBook = null; // {isbn, title, price}
 const sellbar = document.getElementById('sellbar');
 
+function bookPrice(info) {
+  return info.price20 != null ? info.price20 : Math.round(info.priceSite * 0.80 * 100) / 100;
+}
+
 function setCurrentBook(isbn, info) {
   if (!info.known) return;
-  const price = info.price20 != null ? info.price20 : Math.round(info.priceSite * 0.80 * 100) / 100;
-  currentBook = { isbn, title: info.title, price };
-  document.getElementById('sellTitle').textContent = info.title;
-  document.getElementById('sellPrice').textContent = brl0(price);
+  currentBook = { isbn, title: info.title, price: bookPrice(info) };
+  document.getElementById('addTitle').textContent = info.title;
+  document.getElementById('sellPrice').textContent = brl0(sellTotal());
   sellbar.classList.add('show');
 }
 setInterval(() => { // some quando nada detectado há 4s
@@ -672,17 +713,44 @@ setInterval(() => { // some quando nada detectado há 4s
   if (idle && !visionCard && currentBook) { currentBook = null; sellbar.classList.remove('show'); }
 }, 1000);
 
-// fila em localStorage: sobrevive a fechar o navegador
-function loadQueue() { try { return JSON.parse(localStorage.getItem('fila_vendas') || '[]'); } catch(e) { return []; } }
-function saveQueue(q) { try { localStorage.setItem('fila_vendas', JSON.stringify(q.slice(-200))); } catch(e) {} }
+// ---- carrinho (localStorage: sobrevive a fechar o navegador) ----
+function loadCart() { try { return JSON.parse(localStorage.getItem('carrinho') || '[]'); } catch(e) { return []; } }
+function saveCart(c) { try { localStorage.setItem('carrinho', JSON.stringify(c)); } catch(e) {} renderCartPill(); }
+function cartTotal(c) { return (c || loadCart()).reduce((a, i) => a + i.preco * i.qtd, 0); }
+function sellTotal() { // o que "Vender" fecharia agora: carrinho + livro atual
+  const c = loadCart();
+  const t = cartTotal(c);
+  if (currentBook && !c.some(i => i.isbn === currentBook.isbn)) return t + currentBook.price;
+  return t || (currentBook ? currentBook.price : 0);
+}
 
-function enqueueSale(cliente) {
-  const b = currentBook;
-  if (!b) return;
+function addToCart(b, silent) {
+  const c = loadCart();
+  const ex = c.find(i => i.isbn === b.isbn);
+  if (ex) ex.qtd++;
+  else c.push({ isbn: b.isbn, titulo: b.title, preco: b.price, qtd: 1 });
+  saveCart(c);
+  if (!silent) {
+    beep();
+    toast((ex ? ex.qtd + 'x ' : '+ ') + b.title, 1400);
+  }
+}
+
+function renderCartPill() {
+  const c = loadCart();
+  const n = c.reduce((a, i) => a + i.qtd, 0);
+  document.getElementById('cartN').textContent = n;
+  document.getElementById('cartTot').textContent = n ? brl0(cartTotal(c)) : '';
+  document.getElementById('cartPill').classList.toggle('show', n > 0);
+  if (currentBook) document.getElementById('sellPrice').textContent = brl0(sellTotal());
+}
+
+function enqueueSale(itens, cliente) {
   const q = loadQueue();
   q.push({
     id: (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)),
-    isbn: b.isbn, titulo: b.title, preco: b.price, quantidade: 1,
+    itens: itens.map(i => ({ isbn: i.isbn, titulo: i.titulo, preco: i.preco, quantidade: i.qtd })),
+    total: itens.reduce((a, i) => a + i.preco * i.qtd, 0),
     pagamento, cliente, ts: Date.now(), status: 'pendente', msg: ''
   });
   saveQueue(q);
@@ -690,6 +758,10 @@ function enqueueSale(cliente) {
   renderSales();
   syncQueue();
 }
+
+// fila em localStorage
+function loadQueue() { try { return JSON.parse(localStorage.getItem('fila_vendas') || '[]'); } catch(e) { return []; } }
+function saveQueue(q) { try { localStorage.setItem('fila_vendas', JSON.stringify(q.slice(-200))); } catch(e) {} }
 
 let syncing = false;
 async function syncQueue() {
@@ -726,15 +798,21 @@ function renderSales() {
   const badge = document.getElementById('qbadge');
   badge.textContent = pend ? pend + ' na fila' : '';
   badge.classList.toggle('show', pend > 0);
-  document.getElementById('salesList').innerHTML = q.slice(0, 30).map(v => `
+  document.getElementById('salesList').innerHTML = q.slice(0, 30).map(v => {
+    const itens = v.itens || [{ isbn: v.isbn, titulo: v.titulo, preco: v.preco, quantidade: 1 }];
+    const n = itens.reduce((a, i) => a + (i.quantidade || 1), 0);
+    const titulo = n > 1 ? `${esc(itens[0].titulo)} +${n - 1}` : esc(itens[0].titulo);
+    const total = v.total != null ? v.total : itens.reduce((a, i) => a + i.preco * (i.quantidade || 1), 0);
+    return `
     <div class="hitem">
-      <img src="thumbs/${v.isbn}.jpg" alt="" loading="lazy">
+      <img src="thumbs/${itens[0].isbn}.jpg" alt="" loading="lazy">
       <div class="hmid">
-        <div class="ht">${esc(v.titulo)}</div>
+        <div class="ht">${titulo}</div>
         <span class="hst ${v.status}">${v.status === 'pendente' ? 'aguardando sinal' : v.status === 'enviada' ? 'no Bling · ' + esc(String(v.msg)) : 'erro: ' + esc(String(v.msg))}${v.pagamento ? ' · ' + v.pagamento : ''}</span>
       </div>
-      <div class="hp">${brl0(v.preco)}</div>
-    </div>`).join('');
+      <div class="hp">${brl0(total)}</div>
+    </div>`;
+  }).join('');
 }
 
 // ---- pagamento ----
@@ -753,29 +831,73 @@ payrow.addEventListener('click', e => {
 });
 refreshPay();
 
-// ---- modal ----
-const sellModal = document.getElementById('sellModal');
-sellbar.onclick = () => {
-  if (!currentBook) return;
-  document.getElementById('mImg').src = 'thumbs/' + currentBook.isbn + '.jpg';
-  document.getElementById('mTitle').textContent = currentBook.title;
-  document.getElementById('mPrice').textContent = brl0(currentBook.price);
-  const info = lookupBook(currentBook.isbn);
-  document.getElementById('mOld').textContent = info.cover ? brl0(info.cover) : '';
-  sellModal.classList.add('open');
+// ---- botões da barra e pill ----
+document.getElementById('addBtn').onclick = () => {
+  if (currentBook) addToCart(currentBook);
 };
+document.getElementById('sellNow').onclick = () => {
+  if (currentBook) addToCart(currentBook, true); // garante o livro atual no fechamento
+  if (loadCart().length) openCheckout();
+};
+document.getElementById('cartPill').onclick = openCheckout;
+
+// ---- fechamento (modal) ----
+const sellModal = document.getElementById('sellModal');
+
+function renderModalItems() {
+  const c = loadCart();
+  const el = document.getElementById('mItems');
+  el.innerHTML = c.map((i, idx) => `
+    <div class="mitem">
+      <img src="thumbs/${i.isbn}.jpg" alt="">
+      <div class="mi-t">${esc(i.titulo)}</div>
+      <div class="stepper">
+        <button data-i="${idx}" data-d="-1">−</button>
+        <span>${i.qtd}</span>
+        <button data-i="${idx}" data-d="1">+</button>
+      </div>
+      <div class="mi-p">${brl0(i.preco * i.qtd)}</div>
+    </div>`).join('');
+  const n = c.reduce((a, i) => a + i.qtd, 0);
+  document.getElementById('mCount').textContent = n + (n === 1 ? ' livro' : ' livros');
+  document.getElementById('mTotal').textContent = brl0(cartTotal(c));
+}
+document.getElementById('mItems').addEventListener('click', e => {
+  const b = e.target.closest('button[data-i]');
+  if (!b) return;
+  const c = loadCart();
+  const it = c[+b.dataset.i];
+  if (!it) return;
+  it.qtd += +b.dataset.d;
+  if (it.qtd <= 0) c.splice(+b.dataset.i, 1);
+  saveCart(c);
+  if (!c.length) { sellModal.classList.remove('open'); return; }
+  renderModalItems();
+});
+
+function openCheckout() {
+  if (!loadCart().length) return;
+  renderModalItems();
+  refreshPay();
+  sellModal.classList.add('open');
+}
+
 document.getElementById('mCancel').onclick = () => sellModal.classList.remove('open');
 sellModal.addEventListener('click', e => { if (e.target === sellModal) sellModal.classList.remove('open'); });
 document.getElementById('mConfirm').onclick = () => {
+  const c = loadCart();
+  if (!c.length) { sellModal.classList.remove('open'); return; }
   const whats = document.getElementById('mWhats').value.trim();
   const nome = document.getElementById('mNome').value.trim();
   const cpf = document.getElementById('mCpf').value.trim();
   const cliente = (whats || nome || cpf) ? { whatsapp: whats, nome, cpf } : null;
   sellModal.classList.remove('open');
   ['mWhats','mNome','mCpf'].forEach(i => document.getElementById(i).value = '');
-  enqueueSale(cliente);
+  enqueueSale(c, cliente);
+  saveCart([]); // esvazia o carrinho
   toast('Venda registrada' + (navigator.onLine ? '' : ' — sobe pro Bling quando tiver sinal'), 2500);
 };
+renderCartPill();
 renderSales();
 syncQueue();
 

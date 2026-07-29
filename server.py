@@ -238,24 +238,49 @@ def criar_contato(cust):
     return {"id": res["data"]["id"], "nome": nome}
 
 
+def _resolver_produto(isbn):
+    mapa = product_map()
+    prod = mapa.get(isbn)
+    if not prod:
+        res = bling("GET", "/produtos", params={"gtins[]": isbn, "limite": 5})
+        rows = res.get("data", [])
+        if not rows:
+            raise RuntimeError(f"ISBN {isbn} não encontrado no Bling")
+        p = rows[0]
+        prod = {"id": p["id"], "nome": p.get("nome", ""), "preco": p.get("preco", 0)}
+        mapa[isbn] = prod
+        _save(MAP_FILE, mapa)
+    return prod
+
+
 def processar_venda(venda):
-    """venda: {id, isbn, titulo, preco, quantidade, cliente:{nome,whatsapp,cpf,email}}"""
+    """venda: {id, itens:[{isbn,quantidade,titulo,preco}], pagamento, cliente}
+    (ou formato antigo com isbn/quantidade no topo)"""
     done = _load(DONE_FILE, {})
     vid = venda["id"]
     if vid in done:
         return done[vid]  # idempotente: retry não duplica
 
-    mapa = product_map()
-    prod = mapa.get(venda["isbn"])
-    if not prod:
-        res = bling("GET", "/produtos", params={"gtins[]": venda["isbn"], "limite": 5})
-        rows = res.get("data", [])
-        if not rows:
-            raise RuntimeError(f"ISBN {venda['isbn']} não encontrado no Bling")
-        p = rows[0]
-        prod = {"id": p["id"], "nome": p.get("nome", ""), "preco": p.get("preco", 0)}
-        mapa[venda["isbn"]] = prod
-        _save(MAP_FILE, mapa)
+    itens_in = venda.get("itens") or [{"isbn": venda.get("isbn"),
+                                       "quantidade": venda.get("quantidade") or 1,
+                                       "preco": venda.get("preco")}]
+    itens, total = [], 0.0
+    for it in itens_in:
+        isbn = re.sub(r"\D", "", str(it.get("isbn") or ""))
+        if len(isbn) != 13:
+            raise RuntimeError(f"ISBN inválido: {it.get('isbn')}")
+        prod = _resolver_produto(isbn)
+        qtd = max(1, int(it.get("quantidade") or 1))
+        preco = float(prod.get("preco") or it.get("preco") or 0)
+        total += preco * qtd * 0.80
+        itens.append({
+            "produto": {"id": prod["id"]},
+            "descricao": prod["nome"] or it.get("titulo", ""),
+            "quantidade": qtd,
+            "valor": preco,
+            "desconto": 20,
+        })
+    total = round(total, 2)
 
     contato = None
     if venda.get("cliente"):
@@ -267,21 +292,11 @@ def processar_venda(venda):
         cf = cached("consumidor_final", _consumidor_final)
         contato = {"id": cf["id"], "nome": cf.get("nome", "Consumidor Final")}
 
-    qtd = int(venda.get("quantidade") or 1)
-    preco = float(prod.get("preco") or venda.get("preco") or 0)
-    total = round(preco * qtd * 0.80, 2)
     hoje = date.today().isoformat()
-
     pedido = {
         "data": hoje,
         "contato": {"id": contato["id"], "nome": contato["nome"]},
-        "itens": [{
-            "produto": {"id": prod["id"]},
-            "descricao": prod["nome"] or venda.get("titulo", ""),
-            "quantidade": qtd,
-            "valor": preco,
-            "desconto": 20,
-        }],
+        "itens": itens,
         "parcelas": [{
             "dataVencimento": hoje,
             "valor": total,
@@ -461,8 +476,12 @@ class AppHandler(SimpleHTTPRequestHandler):
             return self._json({"erro": "JSON inválido"}, 400)
         if not check_session(self.headers.get("X-Sessao", "")):
             return self._json({"erro": "sessão inválida — faça login", "login": True}, 401)
-        if not venda.get("id") or not re.fullmatch(r"\d{13}", str(venda.get("isbn", ""))):
-            return self._json({"erro": "id e isbn são obrigatórios"}, 400)
+        tem_itens = isinstance(venda.get("itens"), list) and len(venda["itens"]) > 0
+        tem_isbn = re.fullmatch(r"\d{13}", str(venda.get("isbn", "")))
+        if not venda.get("id") or not (tem_itens or tem_isbn):
+            return self._json({"erro": "id e itens/isbn são obrigatórios"}, 400)
+        if tem_itens and len(venda["itens"]) > 50:
+            return self._json({"erro": "máximo 50 itens por venda"}, 400)
         if not bling_connected():
             return self._json({"erro": "Bling não conectado", "retry": True}, 503)
         try:
