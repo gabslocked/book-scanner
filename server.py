@@ -103,23 +103,33 @@ def bling(method, path, body=None, params=None):
 
 def build_product_map():
     """Pagina /produtos e guarda id+preço de cada GTIN. Roda em background."""
-    mapa = {}
-    page = 1
-    while True:
-        res = bling("GET", "/produtos", params={
-            "pagina": page, "limite": 100, "criterio": 2, "tipo": "P"})
-        rows = res.get("data", [])
-        if not rows:
-            break
-        for p in rows:
-            gtin = re.sub(r"\D", "", str(p.get("gtin") or ""))
-            if len(gtin) == 13:
-                mapa[gtin] = {"id": p["id"], "nome": p.get("nome", ""),
-                              "preco": p.get("preco", 0)}
-        page += 1
-        time.sleep(0.4)  # respeita 3 req/s
-    _save(MAP_FILE, mapa)
-    return mapa
+    try:
+        mapa = {}
+        page = 1
+        vistos = 0
+        while True:
+            res = bling("GET", "/produtos", params={
+                "pagina": page, "limite": 100, "criterio": 2, "tipo": "P"})
+            rows = res.get("data", [])
+            if not rows:
+                break
+            vistos += len(rows)
+            for p in rows:
+                gtin = re.sub(r"\D", "", str(p.get("gtin") or ""))
+                if len(gtin) == 13:
+                    mapa[gtin] = {"id": p["id"], "nome": p.get("nome", ""),
+                                  "preco": p.get("preco", 0)}
+            page += 1
+            time.sleep(0.4)  # respeita 3 req/s
+        _save(MAP_FILE, mapa)
+        _save(DATA / "map_status.json",
+              {"ok": True, "produtosVistos": vistos, "comGtin13": len(mapa),
+               "quando": datetime.now().isoformat()})
+        return mapa
+    except Exception as e:
+        _save(DATA / "map_status.json",
+              {"ok": False, "erro": str(e)[:500], "quando": datetime.now().isoformat()})
+        raise
 
 
 def product_map():
@@ -302,6 +312,22 @@ class AppHandler(SimpleHTTPRequestHandler):
                 return self._json({"erro": f"troca de token falhou: {e}"}, 500)
             threading.Thread(target=build_product_map, daemon=True).start()
             return self._redirect("/?bling=conectado")
+
+        if path == "/api/bling/debug":
+            if qs.get("chave", [""])[0] != BLING_CLIENT_SECRET[:10]:
+                return self._json({"erro": "chave inválida"}, 403)
+            out = {"mapStatus": _load(DATA / "map_status.json", "nunca rodou")}
+            try:
+                res = bling("GET", "/produtos", params={"pagina": 1, "limite": 3, "criterio": 2, "tipo": "P"})
+                rows = res.get("data", [])
+                out["amostraProdutos"] = [
+                    {"id": p.get("id"), "nome": (p.get("nome") or "")[:40],
+                     "gtin": p.get("gtin"), "codigo": p.get("codigo"),
+                     "preco": p.get("preco")} for p in rows]
+                out["chaves1oProduto"] = sorted(rows[0].keys()) if rows else []
+            except Exception as e:
+                out["erroProdutos"] = str(e)[:400]
+            return self._json(out)
 
         if path == "/api/bling/testar-venda":
             # guarda simples: exige os 10 primeiros chars do client_secret
