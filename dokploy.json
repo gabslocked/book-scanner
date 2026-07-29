@@ -1,0 +1,8 @@
+{
+  "buildCommand": "echo 'No build needed - static files only'",
+  "startCommand": "python3 server.py",
+  "publishDir": ".",
+  "env": {
+    "PORT": "8000"
+  }
+}

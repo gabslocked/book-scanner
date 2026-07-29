@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📚 Leitor de Código de Barras de Livros</title>
+    <script src="https://cdn.jsdelivr.net/npm/quagga@0.3.1/dist/quagga.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #0a0e27;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            position: relative;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 100;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-small {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+
+        .btn-small:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        /* Camera Container */
+        .camera-container {
+            flex: 1;
+            position: relative;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        /* Scan Guide */
+        .scan-guide {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 280px;
+            height: 100px;
+            border: 3px solid #667eea;
+            border-radius: 8px;
+            pointer-events: none;
+            animation: pulse-border 2s infinite;
+        }
+
+        @keyframes pulse-border {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7);
+            }
+            50% {
+                box-shadow: 0 0 20px 10px rgba(102, 126, 234, 0.2);
+            }
+        }
+
+        /* Price Float Card */
+        .price-card {
+            position: absolute;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.95) 0%, rgba(118, 75, 162, 0.95) 100%);
+            padding: 12px 16px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            z-index: 50;
+            min-width: 140px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.2);
+            animation: float-in 0.3s ease-out;
+        }
+
+        @keyframes float-in {
+            from {
+                opacity: 0;
+                transform: scale(0.8) translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .price-card-barcode {
+            font-size: 11px;
+            color: rgba(255,255,255,0.8);
+            margin-bottom: 4px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .price-card-price {
+            font-size: 24px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .price-card-title {
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+            margin-top: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Status Bar */
+        .status-bar {
+            background: rgba(0,0,0,0.7);
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            z-index: 100;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4caf50;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .status-dot.inactive {
+            background: #888;
+            animation: none;
+            opacity: 0.6;
+        }
+
+        /* Detected Items List */
+        .detected-list {
+            position: absolute;
+            bottom: 80px;
+            left: 12px;
+            right: 12px;
+            background: rgba(0,0,0,0.8);
+            border-radius: 8px;
+            padding: 12px;
+            max-height: 140px;
+            overflow-y: auto;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            z-index: 40;
+        }
+
+        .detected-item {
+            background: rgba(102, 126, 234, 0.2);
+            padding: 8px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 3px solid #667eea;
+        }
+
+        .detected-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .barcode-value {
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+        }
+
+        .barcode-price {
+            color: #4caf50;
+            font-weight: 600;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: rgba(255,255,255,0.6);
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(102, 126, 234, 0.3);
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Modal para informações */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #1a1e3f;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 300px;
+            text-align: center;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+        }
+
+        .modal-content h2 {
+            margin-bottom: 16px;
+            font-size: 18px;
+        }
+
+        .modal-content p {
+            color: rgba(255,255,255,0.7);
+            font-size: 13px;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.15);
+        }
+
+        /* Responsivo */
+        @media (max-width: 600px) {
+            .header h1 {
+                font-size: 16px;
+            }
+
+            .scan-guide {
+                width: 240px;
+                height: 80px;
+            }
+
+            .detected-list {
+                font-size: 11px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>📚 Leitor de Livros</h1>
+            <div class="header-controls">
+                <button class="btn-small" onclick="toggleCamera()">📷 Câmera</button>
+                <button class="btn-small" onclick="showSettings()">⚙️ Info</button>
+            </div>
+        </div>
+
+        <!-- Camera -->
+        <div class="camera-container">
+            <video id="video" autoplay playsinline muted></video>
+            <div class="scan-guide"></div>
+            <div class="detected-list" id="detectedList" style="display: none;"></div>
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Iniciando câmera...</p>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Câmera desligada</span>
+            </div>
+            <div class="status-item">
+                <span id="detectedCount">Detectados: 0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <h2 id="modalTitle">Informação</h2>
+            <p id="modalMessage"></p>
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="closeModal()">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Database de livros com preços (substitua com sua API/base de dados)
+        const bookDatabase = {
+            '9788535914849': { title: 'Dom Casmurro', author: 'Machado de Assis', price: 34.90 },
+            '9788535929935': { title: 'Memórias Póstumas de Brás Cubas', author: 'Machado de Assis', price: 45.00 },
+            '9788526024854': { title: 'O Cortiço', author: 'Aluísio Azevedo', price: 38.50 },
+            '9788526020923': { title: 'Grande Sertão: Veredas', author: 'Guimarães Rosa', price: 52.00 },
+            '9788526000567': { title: '1984', author: 'George Orwell', price: 41.00 },
+            '9788501088779': { title: 'O Pequeno Príncipe', author: 'Antoine de Saint-Exupéry', price: 35.00 },
+        };
+
+        let isScanning = false;
+        let detectedBarcodes = new Map();
+        let activePriceCards = new Map();
+
+        // Inicializar câmera
+        async function initCamera() {
+            try {
+                const video = document.getElementById('video');
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
+                });
+
+                video.srcObject = stream;
+                video.addEventListener('loadedmetadata', () => {
+                    startBarcodeScanning();
+                });
+
+                document.getElementById('loading').style.display = 'none';
+                updateStatus('online');
+            } catch (err) {
+                console.error('Erro ao acessar câmera:', err);
+                showModal('Erro de Câmera', 'Não foi possível acessar a câmera do seu dispositivo. Verifique as permissões.');
+                updateStatus('offline');
+            }
+        }
+
+        // Iniciar detecção de código de barras
+        function startBarcodeScanning() {
+            const video = document.getElementById('video');
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            isScanning = true;
+
+            function scan() {
+                if (!isScanning) return;
+
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    try {
+                        Quagga.decodeSingle({
+                            src: canvas.toDataURL('image/png'),
+                            numOfWorkers: 2,
+                            inputStream: {
+                                size: 800
+                            },
+                            decoder: {
+                                readers: [
+                                    'ean_reader',
+                                    'ean_8_reader',
+                                    'upc_reader',
+                                    'upc_e_reader',
+                                    'codabar_reader',
+                                    'code_128_reader'
+                                ],
+                                debug: {
+                                    showPattern: false,
+                                    showCanvas: false,
+                                    showPattern: false,
+                                    drawBoundingBox: false,
+                                    drawScanline: false
+                                }
+                            }
+                        }, (result) => {
+                            if (result && result.codeResult) {
+                                processBarcode(result.codeResult.code);
+                            }
+                        });
+                    } catch (e) {
+                        // Continua scanning
+                    }
+                }
+
+                requestAnimationFrame(scan);
+            }
+
+            scan();
+        }
+
+        // Processar código de barras detectado
+        function processBarcode(barcode) {
+            if (detectedBarcodes.has(barcode)) {
+                return; // Já foi detectado recentemente
+            }
+
+            // Registrar código de barras detectado
+            detectedBarcodes.set(barcode, Date.now());
+
+            // Limpar detecções antigas (> 5 segundos)
+            for (let [code, time] of detectedBarcodes.entries()) {
+                if (Date.now() - time > 5000) {
+                    detectedBarcodes.delete(code);
+                }
+            }
+
+            // Buscar livro
+            const bookInfo = bookDatabase[barcode];
+
+            if (bookInfo) {
+                showPriceCard(barcode, bookInfo);
+                addToDetectedList(barcode, bookInfo);
+            }
+
+            updateDetectedCount();
+        }
+
+        // Mostrar card de preço flutuante
+        function showPriceCard(barcode, bookInfo) {
+            // Remover card anterior se existir
+            if (activePriceCards.has(barcode)) {
+                activePriceCards.get(barcode).remove();
+            }
+
+            const priceCard = document.createElement('div');
+            priceCard.className = 'price-card';
+            priceCard.innerHTML = `
+                <div class="price-card-barcode">${barcode}</div>
+                <div class="price-card-price">R$ ${bookInfo.price.toFixed(2)}</div>
+                <div class="price-card-title">${bookInfo.title}</div>
+            `;
+
+            // Posicionar aleatoriamente (simula flutuação)
+            const randomX = Math.random() * (window.innerWidth - 160);
+            const randomY = Math.random() * (window.innerHeight - 300) + 100;
+
+            priceCard.style.left = randomX + 'px';
+            priceCard.style.top = randomY + 'px';
+
+            document.querySelector('.camera-container').appendChild(priceCard);
+            activePriceCards.set(barcode, priceCard);
+
+            // Remover após 4 segundos
+            setTimeout(() => {
+                if (activePriceCards.get(barcode) === priceCard) {
+                    priceCard.remove();
+                    activePriceCards.delete(barcode);
+                }
+            }, 4000);
+        }
+
+        // Adicionar à lista de detectados
+        function addToDetectedList(barcode, bookInfo) {
+            const detectedList = document.getElementById('detectedList');
+            detectedList.style.display = 'block';
+
+            const item = document.createElement('div');
+            item.className = 'detected-item';
+            item.innerHTML = `
+                <div>
+                    <div class="barcode-value">${barcode}</div>
+                    <div style="font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 2px;">${bookInfo.title}</div>
+                </div>
+                <div class="barcode-price">R$ ${bookInfo.price.toFixed(2)}</div>
+            `;
+
+            detectedList.insertBefore(item, detectedList.firstChild);
+
+            // Manter apenas últimos 5 itens
+            while (detectedList.children.length > 5) {
+                detectedList.removeChild(detectedList.lastChild);
+            }
+        }
+
+        // Atualizar contador
+        function updateDetectedCount() {
+            document.getElementById('detectedCount').textContent =
+                `Detectados: ${detectedBarcodes.size}`;
+        }
+
+        // Atualizar status
+        function updateStatus(status) {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+
+            if (status === 'online') {
+                dot.classList.remove('inactive');
+                text.textContent = '🟢 Câmera ativa';
+            } else {
+                dot.classList.add('inactive');
+                text.textContent = '⚫ Câmera inativa';
+            }
+        }
+
+        // Toggle câmera
+        function toggleCamera() {
+            if (isScanning) {
+                isScanning = false;
+                document.getElementById('video').srcObject?.getTracks().forEach(t => t.stop());
+                updateStatus('offline');
+            } else {
+                initCamera();
+            }
+        }
+
+        // Modal
+        function showModal(title, message) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalMessage').textContent = message;
+            document.getElementById('modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('active');
+        }
+
+        // Informações
+        function showSettings() {
+            showModal('ℹ️ Sobre',
+                'App de leitura de código de barras de livros.\n\n' +
+                'Aponte a câmera para os códigos de barras dos livros para ver o preço em tempo real.\n\n' +
+                'Desenvolvido com ❤️ usando WebRTC e QuaggaJS'
+            );
+        }
+
+        // Iniciar ao carregar
+        window.addEventListener('load', initCamera);
+
+        // Parar scanning ao sair
+        window.addEventListener('beforeunload', () => {
+            isScanning = false;
+        });
+    </script>
+</body>
+</html>

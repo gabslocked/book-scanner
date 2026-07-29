@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  book-scanner:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    labels:
+      # Configuração para Dokploy/Traefik
+      - traefik.enable=true
+      - traefik.http.routers.book-scanner.rule=Host(`parabola.gabsdev.com`)
+      - traefik.http.routers.book-scanner.entrypoints=websecure
+      - traefik.http.routers.book-scanner.tls.certresolver=letsencrypt
+      - traefik.http.services.book-scanner.loadbalancer.server.port=8000
