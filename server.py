@@ -176,11 +176,31 @@ def _consumidor_final():
     return res["data"]
 
 
-def _forma_pagamento():
+def _formas_pagamento():
     res = bling("GET", "/formas-pagamentos", params={"pagina": 1, "limite": 100})
-    formas = [f for f in res.get("data", []) if f.get("situacao", 1) == 1]
-    for f in formas:
-        if "dinheiro" in f.get("descricao", "").lower():
+    return [f for f in res.get("data", []) if f.get("situacao", 1) == 1]
+
+
+def _norm(s):
+    import unicodedata
+    return unicodedata.normalize("NFD", (s or "").lower()) \
+        .encode("ascii", "ignore").decode()
+
+
+def forma_pagamento_id(tipo):
+    """tipo: pix | dinheiro | cartao. Resolve pro ID cadastrado no Bling."""
+    formas = cached("formas_pagamento", _formas_pagamento)
+    busca = {
+        "pix": ["pix"],
+        "dinheiro": ["dinheiro"],
+        "cartao": ["cartao de credito", "credito", "cartao"],
+    }.get(_norm(tipo) or "dinheiro", ["dinheiro"])
+    for termo in busca:
+        for f in formas:
+            if termo in _norm(f.get("descricao")):
+                return f["id"]
+    for f in formas:  # fallback: dinheiro, senão a primeira ativa
+        if "dinheiro" in _norm(f.get("descricao")):
             return f["id"]
     return formas[0]["id"] if formas else None
 
@@ -265,7 +285,7 @@ def processar_venda(venda):
         "parcelas": [{
             "dataVencimento": hoje,
             "valor": total,
-            "formaPagamento": {"id": cached("forma_pagamento", _forma_pagamento)},
+            "formaPagamento": {"id": forma_pagamento_id(venda.get("pagamento"))},
         }],
         "observacoesInternas": f"Parabola Scanner · venda {vid}",
     }
@@ -369,6 +389,12 @@ class AppHandler(SimpleHTTPRequestHandler):
                 out["chaves1oProduto"] = sorted(rows[0].keys()) if rows else []
             except Exception as e:
                 out["erroProdutos"] = str(e)[:400]
+            try:
+                out["formasPagamento"] = [
+                    {"id": f["id"], "descricao": f.get("descricao")}
+                    for f in cached("formas_pagamento", _formas_pagamento)]
+            except Exception as e:
+                out["erroFormas"] = str(e)[:200]
             return self._json(out)
 
         if path == "/api/bling/testar-venda":

@@ -152,6 +152,13 @@
   .modal-book .mt { font-size:14px; font-weight:700; line-height:1.3; }
   .modal-book .mp { font-size:18px; font-weight:800; color:#ffb020; margin-top:3px; }
   .modal-book .mp s { font-size:12px; color:rgba(255,255,255,.4); font-weight:500; margin-left:6px; }
+  .payrow { display:flex; gap:8px; margin-bottom:4px; }
+  .payrow button {
+    flex:1; padding:11px 0; border-radius:12px; font-size:13.5px; font-weight:700; cursor:pointer;
+    background:rgba(255,255,255,.07); color:rgba(255,255,255,.65);
+    border:1px solid rgba(255,255,255,.14);
+  }
+  .payrow button.sel { background:rgba(255,176,32,.18); color:#ffb020; border-color:#ffb020; }
   .modal label { display:block; font-size:11px; font-weight:700; color:rgba(255,255,255,.5);
     margin:10px 2px 4px; letter-spacing:.3px; }
   .modal input {
@@ -218,6 +225,12 @@
           <div class="mt" id="mTitle"></div>
           <div class="mp"><span id="mPrice"></span><s id="mOld"></s></div>
         </div>
+      </div>
+      <label>Pagamento</label>
+      <div class="payrow" id="payrow">
+        <button data-pag="pix" class="sel">Pix</button>
+        <button data-pag="dinheiro">Dinheiro</button>
+        <button data-pag="cartao">Cartão</button>
       </div>
       <label>WhatsApp (opcional)</label>
       <input id="mWhats" type="tel" inputmode="tel" placeholder="(11) 98765-4321" autocomplete="off">
@@ -670,7 +683,7 @@ function enqueueSale(cliente) {
   q.push({
     id: (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)),
     isbn: b.isbn, titulo: b.title, preco: b.price, quantidade: 1,
-    cliente, ts: Date.now(), status: 'pendente', msg: ''
+    pagamento, cliente, ts: Date.now(), status: 'pendente', msg: ''
   });
   saveQueue(q);
   beep();
@@ -718,11 +731,27 @@ function renderSales() {
       <img src="thumbs/${v.isbn}.jpg" alt="" loading="lazy">
       <div class="hmid">
         <div class="ht">${esc(v.titulo)}</div>
-        <span class="hst ${v.status}">${v.status === 'pendente' ? 'aguardando sinal' : v.status === 'enviada' ? 'no Bling · ' + esc(String(v.msg)) : 'erro: ' + esc(String(v.msg))}</span>
+        <span class="hst ${v.status}">${v.status === 'pendente' ? 'aguardando sinal' : v.status === 'enviada' ? 'no Bling · ' + esc(String(v.msg)) : 'erro: ' + esc(String(v.msg))}${v.pagamento ? ' · ' + v.pagamento : ''}</span>
       </div>
       <div class="hp">${brl0(v.preco)}</div>
     </div>`).join('');
 }
+
+// ---- pagamento ----
+let pagamento = localStorage.getItem('ult_pagamento') || 'pix';
+const payrow = document.getElementById('payrow');
+function refreshPay() {
+  payrow.querySelectorAll('button').forEach(b =>
+    b.classList.toggle('sel', b.dataset.pag === pagamento));
+}
+payrow.addEventListener('click', e => {
+  const b = e.target.closest('button[data-pag]');
+  if (!b) return;
+  pagamento = b.dataset.pag;
+  try { localStorage.setItem('ult_pagamento', pagamento); } catch(err) {}
+  refreshPay();
+});
+refreshPay();
 
 // ---- modal ----
 const sellModal = document.getElementById('sellModal');
