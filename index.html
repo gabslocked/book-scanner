@@ -631,13 +631,16 @@ function showVisionCard(m) {
 // ================= camera =================
 let track = null;
 async function startCamera() {
+  if (track) { try { track.stop(); } catch(e) {} track = null; } // tentativa anterior pendurada
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: { ideal:'environment' }, width:{ ideal:1920 }, height:{ ideal:1080 } },
     audio: false
   });
   video.srcObject = stream;
   track = stream.getVideoTracks()[0];
-  await new Promise(r => video.onloadedmetadata = r);
+  if (video.readyState < 1) {
+    await new Promise(r => { video.onloadedmetadata = r; setTimeout(r, 3000); });
+  }
   await video.play();
   try {
     const caps = track.getCapabilities ? track.getCapabilities() : {};
@@ -947,17 +950,25 @@ document.getElementById('startBtn').onclick = async () => {
   if (!sessao()) { location.href = '/api/bling/conectar'; return; }
   btn.disabled = true; btn.textContent = 'Abrindo câmera…';
   try {
-    await startCamera();
+    await Promise.race([
+      startCamera(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('camera-timeout')), 15000)),
+    ]);
     document.getElementById('gate').classList.add('hidden');
   } catch (err) {
-    btn.disabled = false; btn.textContent = 'Ligar câmera';
-    if (location.protocol === 'http:' && !['localhost','127.0.0.1'].includes(location.hostname)) {
+    if (err.message === 'camera-timeout') {
+      toast('A câmera demorou a responder — toque de novo.', 5000);
+    } else if (location.protocol === 'http:' && !['localhost','127.0.0.1'].includes(location.hostname)) {
       toast('Câmera exige HTTPS. Acesse pelo domínio com https://', 6000);
     } else if (err.name === 'NotAllowedError') {
       toast('Permissão negada. Libere a câmera nas configurações do navegador.', 6000);
+    } else if (err.name === 'NotReadableError') {
+      toast('Câmera ocupada por outro app — fecha ele e tenta de novo.', 6000);
     } else {
       toast('Erro na câmera: ' + err.message, 6000);
     }
+  } finally {
+    if (!running) { btn.disabled = false; btn.textContent = 'Ligar câmera'; }
   }
 };
 </script>
