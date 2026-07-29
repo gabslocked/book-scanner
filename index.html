@@ -689,12 +689,13 @@ async function syncQueue() {
       try {
         const r = await fetch('/api/vender', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Sessao': sessao() },
           body: JSON.stringify(v),
           signal: AbortSignal.timeout ? AbortSignal.timeout(25000) : undefined,
         });
         const j = await r.json();
         if (j.ok) { v.status = 'enviada'; v.msg = 'pedido ' + (j.numero || j.pedidoId); }
+        else if (j.login) { toast('Sessão expirou — entre com o Bling de novo.', 5000); break; }
         else if (j.retry === false) { v.status = 'erro'; v.msg = j.erro || 'rejeitada'; }
         // retry === true: continua pendente pra próxima rodada
         saveQueue(q);
@@ -749,8 +750,32 @@ document.getElementById('mConfirm').onclick = () => {
 renderSales();
 syncQueue();
 
+// ================= sessão (login via Bling) =================
+(function bootSession() {
+  const u = new URL(location.href);
+  const s = u.searchParams.get('sessao');
+  if (s) {
+    try { localStorage.setItem('sessao', s); } catch(e) {}
+    u.searchParams.delete('sessao');
+    history.replaceState(null, '', u.pathname);
+  }
+  if (u.searchParams.get('login') === 'expirado') {
+    history.replaceState(null, '', u.pathname);
+    setTimeout(() => toast('Login expirou no meio do caminho — tente de novo.', 4000), 400);
+  }
+})();
+function sessao() { try { return localStorage.getItem('sessao') || ''; } catch(e) { return ''; } }
+const logged = !!sessao();
+if (!logged) {
+  const btn = document.getElementById('startBtn');
+  btn.textContent = 'Entrar com Bling';
+  document.querySelector('.gate p').textContent =
+    'Use o mesmo login do Bling da loja pra liberar o scanner neste aparelho. Só precisa uma vez.';
+}
+
 document.getElementById('startBtn').onclick = async () => {
   const btn = document.getElementById('startBtn');
+  if (!sessao()) { location.href = '/api/bling/conectar'; return; }
   btn.disabled = true; btn.textContent = 'Abrindo câmera…';
   try {
     await startCamera();

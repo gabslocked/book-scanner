@@ -2,6 +2,8 @@
 """Servidor do Parábola Scanner: app estático + integração de vendas com o Bling (API v3)."""
 
 import base64
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -46,6 +48,37 @@ def _save(f, obj):
 
 def bling_configured():
     return bool(BLING_CLIENT_ID and BLING_CLIENT_SECRET)
+
+
+# ---------------- sessão do app (login das vendedoras via Bling) ----------------
+
+SESSION_DAYS = 180
+
+
+def _hmac(msg):
+    return hmac.new(BLING_CLIENT_SECRET.encode(), msg.encode(),
+                    hashlib.sha256).hexdigest()[:32]
+
+
+def make_session():
+    exp = str(int(time.time() + SESSION_DAYS * 86400))
+    return f"{exp}.{_hmac(exp)}"
+
+
+def check_session(token):
+    try:
+        exp, sig = (token or "").split(".")
+        return hmac.compare_digest(sig, _hmac(exp)) and time.time() < int(exp)
+    except Exception:
+        return False
+
+
+# states pendentes do OAuth com validade (sobrevive a corrida de deploy)
+def _states():
+    st = _load(DATA / "oauth_state.json", {})
+    if not isinstance(st, dict) or "state" in st:  # formato antigo
+        st = {}
+    return {k: v for k, v in st.items() if time.time() - v < 1200}
 
 
 def bling_connected():
@@ -294,24 +327,33 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "produtosMapeados": len(product_map()),
             })
 
+        if path == "/api/auth/check":
+            return self._json({"ok": check_session(qs.get("token", [""])[0])})
+
         if path == "/api/bling/conectar":
             if not bling_configured():
                 return self._json({"erro": "Defina BLING_CLIENT_ID e BLING_CLIENT_SECRET"}, 500)
             state = base64.urlsafe_b64encode(os.urandom(18)).decode()
-            _save(DATA / "oauth_state.json", {"state": state, "ts": time.time()})
+            states = _states()
+            states[state] = time.time()
+            _save(DATA / "oauth_state.json", states)
             return self._redirect(BLING_AUTH + "?" + urllib.parse.urlencode({
                 "response_type": "code", "client_id": BLING_CLIENT_ID, "state": state}))
 
         if path == "/api/bling/callback":
-            st = _load(DATA / "oauth_state.json", {})
-            if not qs.get("code") or qs.get("state", [""])[0] != st.get("state"):
-                return self._json({"erro": "state/code inválido — tente /api/bling/conectar de novo"}, 400)
+            states = _states()
+            got = qs.get("state", [""])[0]
+            if not qs.get("code") or got not in states:
+                return self._redirect("/?login=expirado")
+            states.pop(got, None)
+            _save(DATA / "oauth_state.json", states)
             try:
                 _token_request({"grant_type": "authorization_code", "code": qs["code"][0]})
             except Exception as e:
                 return self._json({"erro": f"troca de token falhou: {e}"}, 500)
-            threading.Thread(target=build_product_map, daemon=True).start()
-            return self._redirect("/?bling=conectado")
+            if not product_map():
+                threading.Thread(target=build_product_map, daemon=True).start()
+            return self._redirect("/?sessao=" + make_session())
 
         if path == "/api/bling/debug":
             if qs.get("chave", [""])[0] != BLING_CLIENT_SECRET[:10]:
@@ -391,6 +433,8 @@ class AppHandler(SimpleHTTPRequestHandler):
             venda = json.loads(self.rfile.read(n))
         except Exception:
             return self._json({"erro": "JSON inválido"}, 400)
+        if not check_session(self.headers.get("X-Sessao", "")):
+            return self._json({"erro": "sessão inválida — faça login", "login": True}, 401)
         if not venda.get("id") or not re.fullmatch(r"\d{13}", str(venda.get("isbn", ""))):
             return self._json({"erro": "id e isbn são obrigatórios"}, 400)
         if not bling_connected():
