@@ -497,7 +497,7 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/bling/status":
             return self._json({
-                "versao": 12,
+                "versao": 13,
                 "configurado": bling_configured(),
                 "conectado": bling_connected(),
                 "redis": redis_ok(),
@@ -535,7 +535,14 @@ class AppHandler(SimpleHTTPRequestHandler):
         if path == "/api/bling/debug":
             if qs.get("chave", [""])[0] != BLING_CLIENT_SECRET[:10]:
                 return self._json({"erro": "chave inválida"}, 403)
-            out = {"mapStatus": _load(DATA / "map_status.json", "nunca rodou")}
+            done = _load(DONE_FILE, {})
+            out = {
+                "mapStatus": _load(DATA / "map_status.json", "nunca rodou"),
+                "vendasScanner": {
+                    "total": len(done),
+                    "ultimas": [{"venda": k[:13], **v} for k, v in list(done.items())[-15:]],
+                },
+            }
             try:
                 res = bling("GET", "/produtos", params={"pagina": 1, "limite": 3, "criterio": 2, "tipo": "P"})
                 rows = res.get("data", [])
