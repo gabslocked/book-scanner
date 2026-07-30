@@ -497,7 +497,7 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/bling/status":
             return self._json({
-                "versao": 13,
+                "versao": 14,
                 "configurado": bling_configured(),
                 "conectado": bling_connected(),
                 "redis": redis_ok(),
@@ -536,7 +536,16 @@ class AppHandler(SimpleHTTPRequestHandler):
             if qs.get("chave", [""])[0] != BLING_CLIENT_SECRET[:10]:
                 return self._json({"erro": "chave inválida"}, 403)
             done = _load(DONE_FILE, {})
+            redis_keys = {}
+            try:
+                if _redis:
+                    for k in _redis._cmd("KEYS", "parabola:*"):
+                        k = k.decode()
+                        redis_keys[k] = f"{_redis._cmd('STRLEN', k)} bytes"
+            except Exception as e:
+                redis_keys = {"erro": str(e)[:200]}
             out = {
+                "redisConteudo": redis_keys,
                 "mapStatus": _load(DATA / "map_status.json", "nunca rodou"),
                 "vendasScanner": {
                     "total": len(done),
